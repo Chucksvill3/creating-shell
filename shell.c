@@ -2,97 +2,149 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <ctype.h>
+#include <signal.h>
 
+char prev[1024]; // Global variable to store the previous directory
 
-
-int handle_exit(char* token){
-    char *code = token+4;
-            while(*code &&isspace(*code)){
-                code++;
-            }
-        int status = atoi(code);
-
-return status;
+int handle_exit(int status) {
+    return status != 0 ? status : 0;
 }
 
+void handle_cd(char* path) {
+    char curr[1024];
 
-int handle_cd(char* token){
-    char* path = token+3;
-    while(*path &&isspace(*path)){
-        path++;
+    // Save the current directory before changing
+    if (getcwd(curr, sizeof(curr)) == NULL) {
+        perror("getcwd() error");
+        return;
     }
 
-
-    if(chidir(*path) == -1){
-        perror("cd");
-        return -1;
+    if (strcmp(path, "-") == 0) {
+        if (chdir(prev) == -1) {
+            perror("cd failed");
+            return;
+        }
+        printf("%s\n", prev);
+    } else {
+        if (chdir(path) == -1) {
+            perror("cd failed");
+            return;
+        }
     }
-    else{
-        sentenv("PWD", path,1);
-        return 0;
+
+    // Update the previous directory
+    strncpy(prev, curr, sizeof(prev));
+
+    // Update the PWD environment variable
+    if (getcwd(curr, sizeof(curr)) == NULL) {
+        perror("getcwd() error");
+        return;
     }
 
-
-
-
+    if (setenv("PWD", curr, 1) == -1) {
+        perror("setenv() error");
+    }
 }
 
+void showpid(int idList[], int size) {
+    int i;
+    for (i = 0; i < size; i++) {
+        printf("%d\n", idList[i]);
+    }
+}
 
-int main(int ac, char** arg) {
+int main(int ac, char** argv) {
     char input[1024];
     char *token;
-    while (1){
-        printf("prompt$ ");
-       if( fgets(input, sizeof(input), stdin)==NULL){
-           perror("problem with input");
-           exit(1);
-       }
+    char* List[10];
+    int i;
+    char* command = NULL;
+    pid_t pid;
+    int execStatus, status;
+    int idList[5] = {0};
+    int a = 0;
+
+    // Initialize previous directory with the current directory
+    if (getcwd(prev, sizeof(prev)) == NULL) {
+        perror("getcwd() error");
+        exit(1);
+    }
+
+    for (i = 0; i < 10; i++) {
+        List[i] = NULL;
+    }
+
+    while (1) {
+        char* curr = getcwd(NULL, 0);
+        if (curr == NULL) {
+            perror("getcwd");
+            exit(1);
+        } else {
+            printf("\033[0;32m%s$ ", curr);
+            printf("\033[0m");
+            free(curr);
+        }
+
+        if (fgets(input, sizeof(input), stdin) == NULL) {
+            perror("problem with input");
+            exit(1);
+        }
 
         strtok(input, "\n");
         token = strtok(input, " ");
-        if (token == NULL){
+        if (token == NULL) {
             continue;
         }
-        if (strncmp(token, "exit", 4) == 0 ){
-            int status = handle_exit(token);
 
-            if(status != 0){
-                printf("exit status %d\n", status);
-                exit(status);
+        i = 0;
+        while (token != NULL) {
+            if (i == 0) {
+                command = strdup(token);
             }
-            else{
-                exit(0);
-
-            
-            }
-
-           
-
-            
+            List[i] = strdup(token);
+            token = strtok(NULL, " ");
+            i++;
         }
 
-        if (strncmp(token, "cd", 2) == 0){
-            int status = handle_cd(token);
-            if(status != 0){
-                printf("cd failed\n");
-            }else{
-                printf("cd success\n");
+        if (strcmp(command, "cd") == 0) {
+            handle_cd(List[1]);
+        } else if (strcmp(command, "exit") == 0) {
+            printf("exiting shell....");
+            break;
+        } else if (strcmp(command, "showpid") == 0) {
+            showpid(idList, 5);
+        } else {
+            if ((pid = fork()) == 0) {
+                execStatus = execvp(command, List);
+                if (execStatus == -1) {
+                    perror("Error: command not executed\n");
+                    exit(1);
+                }
+            } else if (pid > 0) {
+                if (a == 5) {
+                    a = 0;
+                }
+                idList[a] = pid;
+                a++;
+                waitpid(pid, &status, 0);
+            } else {
+                perror("fork failed");
             }
         }
 
-        
+        for (i = 0; i < 10; i++) {
+            if (List[i] != NULL) {
+                free(List[i]);
+                List[i] = NULL;
+            }
+        }
 
-    
-
+        if (command != NULL) {
+            free(command);
+            command = NULL;
+        }
     }
 
-
-// if (fork()==0){
-
-
-//     execvp(av[1], av+1);
-//     perror("execvp");
-// }
-
-return EXIT_SUCCESS;
+    return EXIT_SUCCESS;
 }
