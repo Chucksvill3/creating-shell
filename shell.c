@@ -65,7 +65,7 @@ int main(int ac, char** argv) {
     int idList[5] = {0};
     int a = 0;
 
-    // Initialize previous directory with the current directory
+   
     if (getcwd(prev, sizeof(prev)) == NULL) {
         perror("getcwd() error");
         exit(1);
